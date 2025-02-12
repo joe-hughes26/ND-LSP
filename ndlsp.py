@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import maximum_filter
 from copy import deepcopy
 
-def lsp_nd(X, Y, fs0, timeAx = None):
+def lsp_nd(X, Y, fs0, timeAx = None, retrieve_orthogonality=False):
     '''
     Assume n measurements of m dependant variables and 1 independant varible.
     Further assume m freqency vectors for the m dependant variables each with
@@ -57,7 +57,19 @@ def lsp_nd(X, Y, fs0, timeAx = None):
     
     A2 = a**2 + b**2
     A = np.sqrt(A2)
-    phi = np.arctan2(b, a) + tau - np.pi/2
+    phi = np.arctan2(a, b) - tau
+    inner_products = None
+    if retrieve_orthogonality:
+        bs = {"sin": np.sin(arg - tau[..., None]), "cos": np.cos(arg - tau[..., None])}
+        
+        for k1, v1 in bs.items():
+            for k2, v2 in bs.items():
+                temp = (np.tensordot(v1, np.swapaxes(v2, 0, -1), 1) / (len(Y))) ** 2
+                if inner_products is None:
+                    inner_products = temp
+                else:
+                    inner_products += temp
+        return (A, phi, np.sqrt(inner_products))
     
     return(A, phi)
 
@@ -188,7 +200,7 @@ def makeStairPlot(A, fs, f0, fnames, title = None, Aq = None):
     
     return(fig)
 
-def reconstruct(A, phi, fs, inds, grids):
+def reconstruct(A, phi, fs0, inds, grids, timeAx = None):
     
     '''
     This function returns a reconstruction of 1 wave specified by inds.
@@ -202,7 +214,12 @@ def reconstruct(A, phi, fs, inds, grids):
     Outputs: yre - the signal. same shape of each elements of grids
 
     '''
-    
+    if timeAx is not None:
+        fs = deepcopy(fs0)
+        fs[timeAx] *= -1
+    else:
+        fs = deepcopy(fs0)
+        
     N = len(fs)
     #assert(N == A.ndim == phi.ndim == len(grids) == len(inds) )
     
@@ -214,6 +231,38 @@ def reconstruct(A, phi, fs, inds, grids):
     for i in range(N):
         arg += 2*np.pi * Grids[i] * f0[i]
         
-    yre = A[inds] * np.sin(arg + phi[*inds]) # is it sine or cosine??
+    yre = A[*inds] * np.sin(arg + phi[*inds]) # is it sine or cosine??
+    # print(A[*inds], f0)
+    return yre
+
+def iterative_orthogonal_reconstruction(A, phi, inner_prod, all_fs, n_reconstruct, grids, orthoganality_threshold = 1e-1):
+   
+    
+    # print(A.shape, inner_prod.shape)
+    # print(inner_prod[:10, :10])
+    arg_sorted_amps_inds = np.argsort(A, axis=None)[::-1]
+    min_ind = 1
+    reconstruct_inds = [[*np.unravel_index(arg_sorted_amps_inds[0], A.shape)]]
+    
+    yre = reconstruct(A, phi, all_fs, reconstruct_inds[-1], grids)
+    for i in range(1, n_reconstruct):
+        for ind_0 in range(min_ind, len(arg_sorted_amps_inds)):
+            true_ind_0 = np.unravel_index(arg_sorted_amps_inds[ind_0], A.shape)
+            flag = False
+            for true_ind_1 in reconstruct_inds:
+                if inner_prod[*true_ind_1, *true_ind_0] > orthoganality_threshold: 
+                    flag = True
+            if flag: continue
+            reconstruct_inds.append(true_ind_0)
+            yre += reconstruct(A, phi, all_fs, reconstruct_inds[-1], grids)
+            min_ind = ind_0
+            break
+    # yre = None    
+    # for ri in reconstruct_inds:
+    #     f = all_fs[ri]
+    #     temp = A[ri] + np.sin()
     
     return yre
+    
+    
+    

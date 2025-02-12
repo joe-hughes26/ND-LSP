@@ -5,6 +5,7 @@ Created on Mon Apr 22 15:08:53 2024
 
 @author: jhughes
 """
+#%%
 import ndlsp as nd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,19 +13,23 @@ import matplotlib.pyplot as plt
 
 #%% 1D example
 
-n = 150
+n = 400
 t = np.random.rand(n)
 f0 = 5
 phi0 = 0
-amp = 3
+amp0 = 3
 
-y = amp*np.sin(2 * np.pi * f0 * t + phi0) + np.random.randn(n) * 0.5
+f1 = 3
+phi1 = 0
+amp1 = 2
+
+y = amp0*np.sin(2 * np.pi * f0 * t + phi0) + amp1*np.sin(2 * np.pi * f1 * t + phi1) + np.random.randn(n) * 0.1
 y -= np.mean(y)
 
 #now run the LSP
-fsamp = np.linspace(0.1, 10, 60)
+fsamp = np.linspace(0.5, 10, 200)
 X = np.reshape(t, [1, n])
-A, phi = nd.lsp_nd(X, y, [fsamp])
+A, phi, inner_prod = nd.lsp_nd(X, y, [fsamp], retrieve_orthogonality=True)
 
 #plot the results
 f, (ax1, ax2) = plt.subplots(2,1, figsize = (6,6))
@@ -35,24 +40,32 @@ ax1.set_ylabel('Value []')
 ax2.plot(fsamp, A)
 ax2.set_xlabel('Frequency []')
 ax2.set_ylabel('amplitude []')
-ax2.plot([f0, f0], [0, amp], 'r--', label = f'Known max: Amp = {amp}, phi = {(phi0 * 180/np.pi):.1f} degrees')
+ax2.plot([f0, f0], [0, amp0], 'r--', label = f'Known max: Amp = {amp0}, phi = {(phi0 * 180/np.pi):.1f} degrees')
 
 #try the reconstruction
 inds = [np.argmax(A)]
-
+print(inds)
 ax2.plot(fsamp[inds], A[inds], 'r*', label = f'Retrived max: Amp = {A[inds[0]]:.2f}, phi = {phi[inds[0]] * 180/np.pi:.1f} degrees')
 ax2.legend()
 
 grids = [np.linspace(0, 1, 200)]
 yre = nd.reconstruct(A, phi, [fsamp], inds, grids)
-
 ax1.plot(grids[0], yre, 'k--', label = 'Reconstruction')
+
+yre_2 = nd.iterative_orthogonal_reconstruction(A, phi, inner_prod, [fsamp], n_reconstruct=2, grids=grids, orthoganality_threshold=3e-1)
+ax1.plot(grids[0], yre_2, 'r--', label = 'Iterative Reconstruction')
 ax1.legend()
 
 plt.tight_layout()
+plt.figure()
+plt.imshow(inner_prod)
+plt.colorbar()
+plt.show()
 
 
 #%% 2D example
+import ndlsp as nd
+
 n = 2000
 x = np.random.rand(n)
 y = np.random.rand(n)
@@ -69,7 +82,7 @@ fx = np.linspace(-5, 5, 40)
 fy = np.linspace(-5, 5, 41)
 fs = [fx, fy]
 
-A, phi = nd.lsp_nd(X, z, fs)
+A, phi, inner_prod = nd.lsp_nd(X, z, fs, retrieve_orthogonality=True)
 
 #plot the results - move this to a function eventually
 f, (ax1, ax2) = plt.subplots(2,1, figsize = (6,8))
@@ -86,6 +99,17 @@ plt.plot(*k2, 'rx')
 cb.set_label('Amplitude []')
 ax2.set_xlabel('X frequency []')
 ax2.set_ylabel('Y frequency []')
+
+xg = np.arange(0,1, 0.01)
+yg = np.arange(0, 1, 0.01)
+grids = (xg, yg)
+
+yre = nd.reconstruct(A, phi, fs, [8,24], grids)
+
+yre_2 = nd.iterative_orthogonal_reconstruction(A, phi, inner_prod, fs, 
+                                               n_reconstruct=2, grids=grids, 
+                                               orthoganality_threshold=3e-1)
+
 
 #%% test the 95th percentile
 A95 = nd.findQuantile(X, z, fs, q = 0.95, N = 20)
